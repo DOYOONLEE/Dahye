@@ -4,6 +4,9 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from apify_client import ApifyClient
 from openai import OpenAI
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # 1. 설정
 APIFY_TOKEN = os.getenv("APIFY_TOKEN")
