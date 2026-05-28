@@ -126,7 +126,22 @@ def get_tiktok_data(
         run_input["newestPostDate"] = to_apify_date(end_time)
 
     run = client.actor("clockworks/tiktok-scraper").call(run_input=run_input)
-    return list(client.dataset(run["defaultDatasetId"]).iterate_items())
+    return list(client.dataset(get_default_dataset_id(run)).iterate_items())
+
+def get_default_dataset_id(run):
+    if isinstance(run, dict):
+        return run["defaultDatasetId"]
+
+    for attr in ("default_dataset_id", "defaultDatasetId"):
+        value = getattr(run, attr, None)
+        if value:
+            return value
+
+    run_data = getattr(run, "data", None)
+    if isinstance(run_data, dict) and run_data.get("defaultDatasetId"):
+        return run_data["defaultDatasetId"]
+
+    raise RuntimeError(f"Apify run 결과에서 defaultDatasetId를 찾을 수 없습니다: {type(run).__name__}")
 
 def get_overall_top_viewed(end_time):
     items = get_tiktok_data(end_time=end_time, sorting="MOST_LIKED")
