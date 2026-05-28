@@ -76,7 +76,8 @@ def send_telegram(message):
     requests.post(url, data=payload)
 
 def analyze_tiktok_data(items):
-    if not os.getenv("OPENAI_API_KEY"):
+    openai_api_key = os.getenv("OPENAI_API_KEY")
+    if not openai_api_key or openai_api_key.startswith("your_"):
         return [
             "AI 인사이트를 생성하려면 OPENAI_API_KEY 환경변수를 설정하세요."
             for _ in items
@@ -96,17 +97,20 @@ def analyze_tiktok_data(items):
         )
 
     client = OpenAI()
-    response = client.responses.create(
-        model=OPENAI_MODEL,
-        instructions=(
-            "당신은 TikTok 뷰티/스킨케어 콘텐츠 트렌드를 분석하는 마케팅 전략가입니다. "
-            "각 영상에 대해 한국어 한 줄 인사이트를 작성하세요. "
-            "출력은 반드시 1부터 시작하는 번호 목록 5줄만 작성하고, 각 줄은 35자 이내로 간결하게 쓰세요."
-        ),
-        input="\n\n".join(summaries),
-        reasoning={"effort": "low"},
-        text={"verbosity": "low"},
-    )
+    try:
+        response = client.responses.create(
+            model=OPENAI_MODEL,
+            instructions=(
+                "당신은 TikTok 뷰티/스킨케어 콘텐츠 트렌드를 분석하는 마케팅 전략가입니다. "
+                "각 영상에 대해 한국어 한 줄 인사이트를 작성하세요. "
+                "출력은 반드시 1부터 시작하는 번호 목록 5줄만 작성하고, 각 줄은 35자 이내로 간결하게 쓰세요."
+            ),
+            input="\n\n".join(summaries),
+            reasoning={"effort": "low"},
+            text={"verbosity": "low"},
+        )
+    except Exception as error:
+        return [f"AI 인사이트 생성 실패: {error.__class__.__name__}" for _ in items]
 
     insights = []
     for line in response.output_text.splitlines():
