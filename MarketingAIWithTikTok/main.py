@@ -16,6 +16,7 @@ OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5.5")
 SEARCH_QUERY = os.getenv("SEARCH_QUERY", "skincare")
 REPORT_ITEM_COUNT = int(os.getenv("REPORT_ITEM_COUNT", "5"))
 SCRAPE_CANDIDATE_COUNT = int(os.getenv("SCRAPE_CANDIDATE_COUNT", str(REPORT_ITEM_COUNT)))
+RECENT_UPLOAD_CANDIDATE_COUNT = int(os.getenv("RECENT_UPLOAD_CANDIDATE_COUNT", "100"))
 KST = ZoneInfo("Asia/Seoul")
 
 def require_env(name, value):
@@ -53,16 +54,71 @@ def get_number(item, *keys):
                 continue
     return 0
 
+def get_value(item, *keys):
+    for key in keys:
+        value = item
+        for part in key.split("."):
+            if not isinstance(value, dict):
+                value = None
+                break
+            value = value.get(part)
+        if value not in (None, ""):
+            return value
+    return None
+
+def parse_datetime(value):
+    if value in (None, ""):
+        return None
+    if isinstance(value, (int, float)):
+        timestamp = value / 1000 if value > 10_000_000_000 else value
+        return datetime.fromtimestamp(timestamp, tz=ZoneInfo("UTC"))
+    if isinstance(value, str):
+        text = value.strip()
+        if text.isdigit():
+            return parse_datetime(int(text))
+        try:
+            return datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    return None
+
+def get_created_at(item):
+    value = get_value(
+        item,
+        "createTimeISO",
+        "createTime",
+        "create_time",
+        "timestamp",
+        "publishedAt",
+        "video.createTime",
+    )
+    created_at = parse_datetime(value)
+    if created_at and created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=ZoneInfo("UTC"))
+    return created_at
+
 def to_apify_date(value):
     return value.astimezone(ZoneInfo("UTC")).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-def get_tiktok_data(start_time=None, end_time=None):
+def sort_by_views(items):
+    return sorted(
+        items,
+        key=lambda item: get_number(item, "playCount", "stats.playCount", "statsV2.playCount"),
+        reverse=True,
+    )
+
+def get_tiktok_data(
+    start_time=None,
+    end_time=None,
+    sorting="MOST_LIKED",
+    candidate_count=None,
+):
     client = ApifyClient(require_env("APIFY_TOKEN", APIFY_TOKEN))
     run_input = {
         "searchQueries": [SEARCH_QUERY],
-        "resultsPerPage": SCRAPE_CANDIDATE_COUNT,
+        "resultsPerPage": candidate_count or SCRAPE_CANDIDATE_COUNT,
         "searchSection": "/video",
-        "videoSearchSorting": "MOST_LIKED",
+        "videoSearchSorting": sorting,
     }
     if start_time:
         run_input["oldestPostDateUnified"] = to_apify_date(start_time)
@@ -70,13 +126,28 @@ def get_tiktok_data(start_time=None, end_time=None):
         run_input["newestPostDate"] = to_apify_date(end_time)
 
     run = client.actor("clockworks/tiktok-scraper").call(run_input=run_input)
-    
-    items = list(client.dataset(run["defaultDatasetId"]).iterate_items())
-    items.sort(
-        key=lambda item: get_number(item, "playCount", "stats.playCount", "statsV2.playCount"),
-        reverse=True,
+    return list(client.dataset(run["defaultDatasetId"]).iterate_items())
+
+def get_overall_top_viewed(end_time):
+    items = get_tiktok_data(end_time=end_time, sorting="MOST_LIKED")
+    return sort_by_views(items)[:REPORT_ITEM_COUNT]
+
+def get_recent_upload_top_viewed(start_time, end_time):
+    items = get_tiktok_data(
+        start_time=start_time,
+        end_time=end_time,
+        sorting="LATEST",
+        candidate_count=RECENT_UPLOAD_CANDIDATE_COUNT,
     )
-    return items[:REPORT_ITEM_COUNT]
+    filtered_items = []
+    for item in items:
+        created_at = get_created_at(item)
+        if not created_at:
+            continue
+        created_at_kst = created_at.astimezone(KST)
+        if start_time <= created_at_kst <= end_time:
+            filtered_items.append(item)
+    return sort_by_views(filtered_items)[:REPORT_ITEM_COUNT]
 
 def send_telegram(message):
     telegram_token = require_env("TELEGRAM_TOKEN", TELEGRAM_TOKEN)
@@ -148,6 +219,9 @@ def analyze_tiktok_data(items):
     return (insights + ["인사이트 없음"] * len(items))[:len(items)]
 
 def format_items(items):
+    if not items:
+        return "조건에 맞는 영상이 없습니다.\n\n"
+
     insights = analyze_tiktok_data(items)
     text = ""
     for i, item in enumerate(items, 1):
@@ -155,25 +229,30 @@ def format_items(items):
         url = item.get("webVideoUrl") or item.get("url") or item.get("videoUrl") or "URL 없음"
         insight = insights[i - 1]
         play_count = get_number(item, "playCount", "stats.playCount", "statsV2.playCount")
-        text += f"{i}. {title}\n조회수: {play_count:,}\n인사이트: {insight}\n{url}\n\n"
+        created_at = get_created_at(item)
+        created_at_text = ""
+        if created_at:
+            created_at_text = f"\n업로드: {created_at.astimezone(KST).strftime('%Y-%m-%d %H:%M')} KST"
+        text += f"{i}. {title}\n조회수: {play_count:,}{created_at_text}\n인사이트: {insight}\n{url}\n\n"
     return text
 
 def build_message():
     window_start, window_end = get_report_window()
-    overall_data = get_tiktok_data(end_time=window_end)
-    rising_data = get_tiktok_data(start_time=window_start, end_time=window_end)
+    overall_data = get_overall_top_viewed(window_end)
+    rising_data = get_recent_upload_top_viewed(window_start, window_end)
 
     message = (
         "오늘의 스킨케어 트렌드 리포트\n"
         f"실행 기준: {window_end.strftime('%Y-%m-%d %H:%M')} KST\n"
         f"검색어/해시태그: {SEARCH_QUERY}\n\n"
         "[1] 오전 9시 기준 조회수 Top 5\n"
-        "※ Actor는 조회수순 검색을 직접 지원하지 않아, 수집 결과를 조회수 기준으로 정렬합니다.\n\n"
+        "※ 조회수순 검색은 Actor가 직접 지원하지 않아, MOST_LIKED 결과를 조회수 기준으로 재정렬합니다.\n\n"
     )
     message += format_items(overall_data)
     message += (
         f"[2] 최근 24시간 업로드 조회수 Top 5\n"
         f"기간: {window_start.strftime('%Y-%m-%d %H:%M')} ~ {window_end.strftime('%Y-%m-%d %H:%M')} KST\n\n"
+        "※ LATEST로 후보를 모은 뒤 업로드 시간을 확인하고 조회수 기준으로 재정렬합니다.\n\n"
     )
     message += format_items(rising_data)
     return message

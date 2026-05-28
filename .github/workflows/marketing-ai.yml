@@ -43,5 +43,6 @@ jobs:
           OPENAI_MODEL: gpt-5.5
           SEARCH_QUERY: skincare
           SCRAPE_CANDIDATE_COUNT: "5"
+          RECENT_UPLOAD_CANDIDATE_COUNT: "100"
           REPORT_ITEM_COUNT: "5"
         run: python MarketingAIWithTikTok/main.py
