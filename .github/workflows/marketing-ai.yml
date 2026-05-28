@@ -42,6 +42,6 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_MODEL: gpt-5.5
           SEARCH_QUERY: skincare
-          SCRAPE_CANDIDATE_COUNT: "50"
+          SCRAPE_CANDIDATE_COUNT: "5"
           REPORT_ITEM_COUNT: "5"
         run: python MarketingAIWithTikTok/main.py
