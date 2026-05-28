@@ -2,9 +2,6 @@ name: Marketing AI With TikTok
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
   schedule:
     # Runs every day at 09:00 KST. GitHub Actions cron uses UTC.
     - cron: "0 0 * * *"
@@ -24,6 +21,18 @@ jobs:
 
       - name: Install dependencies
         run: pip install -r MarketingAIWithTikTok/requirements.txt
+
+      - name: Validate secrets
+        env:
+          APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          test -n "$APIFY_TOKEN" || { echo "::error::Missing repository secret: APIFY_TOKEN"; exit 1; }
+          test -n "$TELEGRAM_TOKEN" || { echo "::error::Missing repository secret: TELEGRAM_TOKEN"; exit 1; }
+          test -n "$TELEGRAM_CHAT_ID" || { echo "::error::Missing repository secret: TELEGRAM_CHAT_ID"; exit 1; }
+          test -n "$OPENAI_API_KEY" || { echo "::error::Missing repository secret: OPENAI_API_KEY"; exit 1; }
 
       - name: Run marketing report
         env:
