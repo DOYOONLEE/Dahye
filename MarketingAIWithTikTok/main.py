@@ -15,8 +15,7 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5.5")
 SEARCH_QUERY = os.getenv("SEARCH_QUERY", "skincare")
 REPORT_ITEM_COUNT = int(os.getenv("REPORT_ITEM_COUNT", "5"))
-SCRAPE_CANDIDATE_COUNT = int(os.getenv("SCRAPE_CANDIDATE_COUNT", str(REPORT_ITEM_COUNT)))
-RECENT_UPLOAD_CANDIDATE_COUNT = int(os.getenv("RECENT_UPLOAD_CANDIDATE_COUNT", "100"))
+RECENT_UPLOAD_CANDIDATE_COUNT = int(os.getenv("RECENT_UPLOAD_CANDIDATE_COUNT", "30"))
 KST = ZoneInfo("Asia/Seoul")
 
 def require_env(name, value):
@@ -110,13 +109,13 @@ def sort_by_views(items):
 def get_tiktok_data(
     start_time=None,
     end_time=None,
-    sorting="MOST_LIKED",
+    sorting="LATEST",
     candidate_count=None,
 ):
     client = ApifyClient(require_env("APIFY_TOKEN", APIFY_TOKEN))
     run_input = {
         "searchQueries": [SEARCH_QUERY],
-        "resultsPerPage": candidate_count or SCRAPE_CANDIDATE_COUNT,
+        "resultsPerPage": candidate_count or RECENT_UPLOAD_CANDIDATE_COUNT,
         "searchSection": "/video",
         "videoSearchSorting": sorting,
     }
@@ -142,10 +141,6 @@ def get_default_dataset_id(run):
         return run_data["defaultDatasetId"]
 
     raise RuntimeError(f"Apify run 결과에서 defaultDatasetId를 찾을 수 없습니다: {type(run).__name__}")
-
-def get_overall_top_viewed(end_time):
-    items = get_tiktok_data(end_time=end_time, sorting="MOST_LIKED")
-    return sort_by_views(items)[:REPORT_ITEM_COUNT]
 
 def get_recent_upload_top_viewed(start_time, end_time):
     items = get_tiktok_data(
@@ -253,20 +248,14 @@ def format_items(items):
 
 def build_message():
     window_start, window_end = get_report_window()
-    overall_data = get_overall_top_viewed(window_end)
     rising_data = get_recent_upload_top_viewed(window_start, window_end)
 
     message = (
-        "오늘의 스킨케어 트렌드 리포트\n"
+        "최근 24시간 스킨케어 급상승 영상 Top 5\n"
         f"실행 기준: {window_end.strftime('%Y-%m-%d %H:%M')} KST\n"
-        f"검색어/해시태그: {SEARCH_QUERY}\n\n"
-        "[1] 오전 9시 기준 조회수 Top 5\n"
-        "※ 조회수순 검색은 Actor가 직접 지원하지 않아, MOST_LIKED 결과를 조회수 기준으로 재정렬합니다.\n\n"
-    )
-    message += format_items(overall_data)
-    message += (
-        f"[2] 최근 24시간 업로드 조회수 Top 5\n"
         f"기간: {window_start.strftime('%Y-%m-%d %H:%M')} ~ {window_end.strftime('%Y-%m-%d %H:%M')} KST\n\n"
+        f"검색어/해시태그: {SEARCH_QUERY}\n"
+        f"후보 수: 최근 업로드 {RECENT_UPLOAD_CANDIDATE_COUNT}개\n\n"
         "※ LATEST로 후보를 모은 뒤 업로드 시간을 확인하고 조회수 기준으로 재정렬합니다.\n\n"
     )
     message += format_items(rising_data)
