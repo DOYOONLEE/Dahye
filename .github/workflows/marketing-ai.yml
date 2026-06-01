@@ -3,8 +3,9 @@ name: Marketing AI With TikTok
 on:
   workflow_dispatch:
   schedule:
-    # Runs every day at 09:00 KST. GitHub Actions cron uses UTC.
-    - cron: "0 0 * * *"
+    # Requests a run every day at 07:00 KST. GitHub Actions cron uses UTC.
+    # Scheduled workflows can be delayed, so this is intentionally earlier than the 09:00 KST target.
+    - cron: "0 22 * * *"
 
 jobs:
   run:
