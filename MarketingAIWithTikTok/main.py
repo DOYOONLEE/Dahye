@@ -25,16 +25,7 @@ def require_env(name, value):
 
 def get_report_window():
     now_kst = datetime.now(KST)
-    end_time = datetime(
-        now_kst.year,
-        now_kst.month,
-        now_kst.day,
-        9,
-        0,
-        tzinfo=KST,
-    )
-    if now_kst < end_time:
-        end_time -= timedelta(days=1)
+    end_time = now_kst.replace(second=0, microsecond=0)
     start_time = end_time - timedelta(days=1)
     return start_time, end_time
 
@@ -96,9 +87,6 @@ def get_created_at(item):
         created_at = created_at.replace(tzinfo=ZoneInfo("UTC"))
     return created_at
 
-def to_apify_date(value):
-    return value.astimezone(ZoneInfo("UTC")).strftime("%Y-%m-%dT%H:%M:%SZ")
-
 def sort_by_views(items):
     return sorted(
         items,
@@ -107,8 +95,6 @@ def sort_by_views(items):
     )
 
 def get_tiktok_data(
-    start_time=None,
-    end_time=None,
     sorting="LATEST",
     candidate_count=None,
 ):
@@ -119,10 +105,6 @@ def get_tiktok_data(
         "searchSection": "/video",
         "videoSearchSorting": sorting,
     }
-    if start_time:
-        run_input["oldestPostDateUnified"] = to_apify_date(start_time)
-    if end_time:
-        run_input["newestPostDate"] = to_apify_date(end_time)
 
     run = client.actor("clockworks/tiktok-scraper").call(run_input=run_input)
     return list(client.dataset(get_default_dataset_id(run)).iterate_items())
@@ -144,8 +126,6 @@ def get_default_dataset_id(run):
 
 def get_recent_upload_top_viewed(start_time, end_time):
     items = get_tiktok_data(
-        start_time=start_time,
-        end_time=end_time,
         sorting="LATEST",
         candidate_count=RECENT_UPLOAD_CANDIDATE_COUNT,
     )
@@ -256,7 +236,7 @@ def build_message():
         f"기간: {window_start.strftime('%Y-%m-%d %H:%M')} ~ {window_end.strftime('%Y-%m-%d %H:%M')} KST\n\n"
         f"검색어/해시태그: {SEARCH_QUERY}\n"
         f"후보 수: 최근 업로드 {RECENT_UPLOAD_CANDIDATE_COUNT}개\n\n"
-        "※ LATEST로 후보를 모은 뒤 업로드 시간을 확인하고 조회수 기준으로 재정렬합니다.\n\n"
+        "※ Apify 날짜 필터는 사용하지 않고, LATEST 후보를 코드에서 최근 24시간으로 재검증합니다.\n\n"
     )
     message += format_items(rising_data)
     return message
